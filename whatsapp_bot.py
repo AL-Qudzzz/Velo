@@ -156,17 +156,42 @@ def send_message(driver: webdriver.Chrome, phone: str, message: str, name: str =
         # Human-like delay before typing
         utils.human_delay(0.5, 1.5)
         
-        # Type message (simulate human typing)
+        # Click on message box
         message_box.click()
-        for char in message:
-            message_box.send_keys(char)
-            if char in [' ', '.', ',', '!', '?']:
-                time.sleep(0.05)  # Slight pause after punctuation
+        
+        # Try to use clipboard paste method (preferred - sends as single bubble)
+        try:
+            import pyperclip
+            
+            # Copy message to clipboard
+            pyperclip.copy(message)
+            
+            # Paste using Ctrl+V (works on both Windows and Linux)
+            from selenium.webdriver.common.action_chains import ActionChains
+            actions = ActionChains(driver)
+            actions.key_down(Keys.CONTROL).send_keys('v').key_up(Keys.CONTROL).perform()
+            
+            # Small delay to ensure paste completes
+            time.sleep(0.5)
+            
+        except ImportError:
+            # Fallback: Use Shift+Enter for newlines (if pyperclip not available)
+            utils.log_message("pyperclip not available, using Shift+Enter method", "WARNING")
+            
+            # Split message by newlines and send with Shift+Enter
+            lines = message.split('\n')
+            for i, line in enumerate(lines):
+                message_box.send_keys(line)
+                # Add Shift+Enter for newline (except for last line)
+                if i < len(lines) - 1:
+                    from selenium.webdriver.common.action_chains import ActionChains
+                    actions = ActionChains(driver)
+                    actions.key_down(Keys.SHIFT).send_keys(Keys.ENTER).key_up(Keys.SHIFT).perform()
         
         # Human-like delay before sending
         utils.human_delay(0.5, 1.0)
         
-        # Send message (Enter key or click send button)
+        # Send message (Enter key)
         message_box.send_keys(Keys.ENTER)
         
         # Wait for message to be sent
