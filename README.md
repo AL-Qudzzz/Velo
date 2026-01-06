@@ -4,12 +4,16 @@
 
 ## ✨ Features
 
+- ✅ **Graphical User Interface (GUI)**: Easy-to-use Tkinter interface with visual controls
+- ✅ **WhatsApp URL Message Extraction**: Automatically extract messages from WhatsApp API URLs
+- ✅ **Customizable Delays**: Adjust base delay, jitter, and warm-up settings with sliders
+- ✅ **Delay Presets**: Quick presets (Safe/Moderate/Fast) for different risk levels
 - ✅ **Session Persistence**: QR code scan only once, automatic login on subsequent runs
 - ✅ **Interactive Column Selection**: Auto-detect or manually select Excel columns
 - ✅ **Smart Phone Sanitization**: Handles wa.me links, country codes, and formatting
-- ✅ **Anti-Ban Protection**: 60s base delay + randomized jitter (5-15s)
-- ✅ **Warm-up Strategy**: Slower sending for first 5 messages
-- ✅ **Progress Autosave**: Resume from where you left off if interrupted
+- ✅ **Anti-Ban Protection**: Configurable delays with real-time estimates
+- ✅ **Warm-up Strategy**: Customizable warm-up message count and delay
+- ✅ **Progress Tracking**: Real-time progress bar and statistics (success/failed/remaining)
 - ✅ **Invalid Number Detection**: Automatically skips non-existent WhatsApp numbers
 - ✅ **Human-like Behavior**: Randomized typing speed and delays
 
@@ -36,7 +40,33 @@ This will:
 - Install all dependencies
 - Verify the installation
 
-### 2. Prepare Your Data
+### 2. Run the Application
+
+**Option A: GUI Mode (Recommended)**
+
+Double-click `run_gui.bat` or run:
+
+```bash
+run_gui.bat
+```
+
+This launches the graphical interface where you can:
+
+- Browse and load Excel/CSV files
+- Preview data and select columns
+- Customize delay settings with sliders
+- Monitor progress in real-time
+
+**Option B: Command Line Mode**
+
+For advanced users:
+
+```bash
+.venv\Scripts\activate
+python whatsapp_bot.py contacts.xlsx
+```
+
+### 3. Prepare Your Data
 
 Create an Excel file (`.xlsx`) or CSV file with your contacts. Example:
 
@@ -52,22 +82,46 @@ Create an Excel file (`.xlsx`) or CSV file with your contacts. Example:
 - With country code: `+628123456789` or `628123456789`
 - WhatsApp links: `https://wa.me/628123456789`
 
-### 3. Run the Bot
+## 🖥️ Using the GUI
 
-Activate virtual environment and run:
+### Main Interface
 
-```bash
-.venv\Scripts\activate
-python whatsapp_bot.py path\to\your\contacts.xlsx
-```
+The GUI has 3 tabs:
 
-Or run without arguments to be prompted:
+#### 📁 Tab 1: File & Columns
 
-```bash
-python whatsapp_bot.py
-```
+1. Click **Browse** to select your Excel/CSV file
+2. Click **Load File** to preview the data
+3. Click **Auto-Detect Columns** or manually select:
+   - Phone column (required)
+   - Name column (optional)
+   - Message column (optional)
+4. Enter a default message if no message column is selected
 
-### 4. Interactive Workflow
+#### ⏱️ Tab 2: Delay Settings
+
+1. Adjust delay settings using sliders:
+   - **Base Delay**: Time between messages (30-180s)
+   - **Jitter Min/Max**: Random variation (0-60s)
+   - **Warm-up Messages**: Number of slower initial messages (0-20)
+   - **Warm-up Extra Delay**: Additional delay for warm-up (0-180s)
+2. Use **Quick Presets**:
+   - 🐢 **Safe (Recommended)**: 60s base + 10-20s jitter
+   - ⚡ **Moderate**: 45s base + 5-15s jitter
+   - 🚀 **Fast (Risky)**: 30s base + 3-10s jitter
+3. View estimated total time for your message batch
+
+#### ▶️ Tab 3: Execution
+
+1. Click **▶️ Start Sending** to begin
+2. Scan QR code (first time only)
+3. Monitor progress:
+   - Progress bar shows completion
+   - Real-time log displays each action
+   - Statistics show success/failed/remaining counts
+4. Click **⏹️ Stop** to interrupt if needed
+
+### 4. Command Line Workflow (Alternative)
 
 The bot will guide you through:
 

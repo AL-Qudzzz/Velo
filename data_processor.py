@@ -276,6 +276,85 @@ def parse_wa_link(text: str) -> Optional[str]:
         return clean_number(extracted)
     return None
 
+def extract_message_from_url(url: str) -> Optional[str]:
+    """
+    Extract pre-formatted message from WhatsApp API URL
+    
+    Args:
+        url: WhatsApp API URL (e.g., https://api.whatsapp.com/send?phone=xxx&text=xxx)
+        
+    Returns:
+        Decoded message text or None if not found
+        
+    Example:
+        >>> url = "https://api.whatsapp.com/send?phone=6289637412604&text=Hello%20World"
+        >>> extract_message_from_url(url)
+        'Hello World'
+    """
+    if not url or not isinstance(url, str):
+        return None
+    
+    import urllib.parse
+    
+    try:
+        # Parse the URL
+        parsed = urllib.parse.urlparse(url)
+        
+        # Extract query parameters
+        params = urllib.parse.parse_qs(parsed.query)
+        
+        # Get the 'text' parameter
+        if 'text' in params and params['text']:
+            # URL decode the message
+            message = urllib.parse.unquote(params['text'][0])
+            
+            # Replace URL-encoded newlines with actual newlines
+            message = message.replace('%0A', '\n').replace('%0D', '\r')
+            
+            # Clean up the message
+            message = message.strip()
+            
+            if message:
+                utils.log_message(f"Extracted message from URL ({len(message)} chars)", "DEBUG")
+                return message
+    
+    except Exception as e:
+        utils.log_message(f"Failed to extract message from URL: {str(e)}", "WARNING")
+    
+    return None
+
+def parse_whatsapp_url(url: str) -> Optional[Dict[str, str]]:
+    """
+    Parse WhatsApp API URL to extract both phone and message
+    
+    Args:
+        url: WhatsApp API URL
+        
+    Returns:
+        Dictionary with 'phone' and 'message' keys, or None if invalid
+        
+    Example:
+        >>> url = "https://api.whatsapp.com/send?phone=6289637412604&text=Hello"
+        >>> parse_whatsapp_url(url)
+        {'phone': '6289637412604', 'message': 'Hello'}
+    """
+    if not url or not isinstance(url, str):
+        return None
+    
+    result = {}
+    
+    # Extract phone number
+    phone = parse_wa_link(url)
+    if phone:
+        result['phone'] = phone
+    
+    # Extract message
+    message = extract_message_from_url(url)
+    if message:
+        result['message'] = message
+    
+    return result if result else None
+
 # ============================================================================
 # DATA PREPARATION
 # ============================================================================
@@ -300,19 +379,39 @@ def prepare_contacts(df: pd.DataFrame, column_mapping: Dict[str, str], default_m
     utils.log_message(f"Preparing contacts from {len(df)} rows...", "INFO")
     
     for idx, row in df.iterrows():
-        # Clean phone number
-        phone = clean_number(row[phone_col])
+        phone_value = str(row[phone_col]).strip()
+        
+        # Check if it's a WhatsApp API URL with message
+        url_data = None
+        if 'api.whatsapp.com' in phone_value or 'wa.me' in phone_value:
+            url_data = parse_whatsapp_url(phone_value)
+        
+        # Extract phone number
+        if url_data and 'phone' in url_data:
+            phone = url_data['phone']
+        else:
+            phone = clean_number(phone_value)
         
         if not phone:
-            utils.log_message(f"Row {idx+1}: Invalid phone number '{row[phone_col]}'", "WARNING")
+            utils.log_message(f"Row {idx+1}: Invalid phone number '{phone_value}'", "WARNING")
             continue
         
         # Get name
         name = utils.clean_string(row[name_col]) if name_col and name_col in row else "Customer"
         
-        # Get message
-        if message_col and message_col in row:
+        # Get message - priority: URL message > column message > default message
+        message = None
+        
+        # 1. Try to get message from URL (highest priority)
+        if url_data and 'message' in url_data:
+            message = url_data['message']
+            utils.log_message(f"Row {idx+1}: Using message from WhatsApp URL", "DEBUG")
+        
+        # 2. Try to get message from column
+        elif message_col and message_col in row:
             message = utils.clean_string(row[message_col])
+        
+        # 3. Use default message
         else:
             message = default_message or "Hello!"
         
@@ -320,7 +419,8 @@ def prepare_contacts(df: pd.DataFrame, column_mapping: Dict[str, str], default_m
             'phone': phone,
             'name': name,
             'message': message,
-            'original_row': idx + 1
+            'original_row': idx + 1,
+            'from_url': bool(url_data and 'message' in url_data)
         })
     
     utils.log_message(f"Prepared {len(contacts)} valid contacts", "INFO")
