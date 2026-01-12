@@ -8,9 +8,9 @@ from pathlib import Path
 import sys
 
 # Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import data_processor
+from src import data_processor
 
 def test_url_extraction():
     """Test URL message extraction"""

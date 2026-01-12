@@ -18,9 +18,9 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
-import config
-import utils
-import data_processor
+from . import config
+from . import utils
+from . import data_processor
 
 # ============================================================================
 # SELENIUM DRIVER SETUP

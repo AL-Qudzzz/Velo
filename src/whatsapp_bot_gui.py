@@ -12,15 +12,15 @@ import json
 from datetime import datetime
 import time as time_module
 
-import config
-import utils
-import data_processor
-from whatsapp_bot import setup_driver, wait_for_whatsapp_load, send_message, detect_invalid_number
+from . import config
+from . import utils
+from . import data_processor
+from .whatsapp_bot import setup_driver, wait_for_whatsapp_load, send_message, detect_invalid_number
 
 class WhatsAppBotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("WhatsApp Bot Blasting System - Enhanced")
+        self.root.title("Automatic Blasting WA")
         self.root.geometry("950x750")
         self.root.resizable(True, True)
         
@@ -59,7 +59,7 @@ class WhatsAppBotGUI:
         
         title_label = tk.Label(
             title_frame,
-            text="🤖 WhatsApp Bot Blasting System - Enhanced",
+            text="🤖 Automatic Blasting WA",
             font=("Arial", 18, "bold"),
             bg="#25D366",
             fg="white"

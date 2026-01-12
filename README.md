@@ -44,10 +44,10 @@ This will:
 
 **Option A: GUI Mode (Recommended)**
 
-Double-click `run_gui.bat` or run:
+Double-click `scripts\run_gui.bat` or run:
 
 ```bash
-run_gui.bat
+scripts\run_gui.bat
 ```
 
 This launches the graphical interface where you can:

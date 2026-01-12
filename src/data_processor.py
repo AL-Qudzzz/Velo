@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from colorama import init, Fore, Style
 
-import config
-import utils
+from . import config
+from . import utils
 
 # Initialize colorama for Windows
 init()
