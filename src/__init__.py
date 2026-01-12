@@ -1,6 +1,6 @@
 """
-WhatsApp Bot Source Package
+Velo Bot Source Package
 """
 
 __version__ = "2.0.0"
-__author__ = "AutoBlast Team"
+__author__ = "Velo Bot Team"

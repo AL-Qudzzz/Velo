@@ -1,4 +1,4 @@
-# AutoBlast - WhatsApp Automation Tool
+# Velo Bot - WhatsApp Automation Tool
 
 A Python-based automation tool for sending bulk WhatsApp messages through WhatsApp Web. Built with Selenium for reliable browser automation and includes both CLI and GUI interfaces.
 
@@ -140,7 +140,7 @@ After completion, export a list of failed numbers:
 ## Project Structure
 
 ```
-AutoBlast/
+Velo Bot/
 ├── src/                    # Source code
 │   ├── config.py          # Configuration settings
 │   ├── utils.py           # Utility functions

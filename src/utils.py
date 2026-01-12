@@ -1,5 +1,5 @@
 """
-WhatsApp Bot Utility Functions
+Velo Bot Utility Functions
 Helper functions for timing, logging, progress tracking, and validation
 """
 

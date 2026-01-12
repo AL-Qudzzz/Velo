@@ -1,5 +1,5 @@
 """
-WhatsApp Bot Data Processor
+Velo Bot Data Processor
 Handles Excel/CSV ingestion, column detection, and phone number sanitization
 """
 

@@ -201,7 +201,7 @@ Total Failed: 5
 ### Progress File Location
 
 ```
-d:\Coding\AutoBlast\progress_gui.json
+d:\Coding\Velo Bot\progress_gui.json
 ```
 
 ### Progress File Structure

@@ -1,6 +1,6 @@
 """
-WhatsApp Bot Configuration Module
-Centralized configuration for timing, XPath selectors, and system parameters
+Velo Bot Configuration Module
+Centralized configuration for timing, XPath selectors, and system settings
 """
 
 import os

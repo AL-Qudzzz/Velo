@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo WhatsApp Bot - GUI Launcher
+echo Velo Bot - GUI Launcher
 echo ========================================
 echo.
 
@@ -15,7 +15,7 @@ if not exist ".venv\Scripts\activate.bat" (
 echo Activating virtual environment...
 call .venv\Scripts\activate.bat
 
-echo Starting WhatsApp Bot GUI...
+echo Starting Velo Bot GUI...
 python -m src.whatsapp_bot_gui
 
 pause

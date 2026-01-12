@@ -5,7 +5,7 @@
 Struktur project telah dirapihkan dengan folder yang terorganisir:
 
 ```
-AutoBlast/
+Velo Bot/
 ├── 📂 src/                      # Source code
 │   ├── __init__.py
 │   ├── config.py

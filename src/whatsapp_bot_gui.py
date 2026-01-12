@@ -1,5 +1,5 @@
 """
-WhatsApp Bot GUI Application - Enhanced Version
+Velo Bot GUI Application - Enhanced Version
 Features: Countdown timer, Pause/Resume, Fixed delay, Failed numbers log
 """
 
@@ -598,7 +598,7 @@ Lower delays = higher risk of account suspension. Use with caution!"""
         """Run the bot (in separate thread)"""
         try:
             self.log("="*60)
-            self.log("Starting WhatsApp Bot...")
+            self.log("Starting Velo Bot...")
             self.log("="*60)
             
             # Setup driver if not exists

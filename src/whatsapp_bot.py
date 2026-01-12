@@ -1,5 +1,5 @@
 """
-WhatsApp Bot Main Automation Module
+Velo Bot Main Automation Module
 Selenium-based automation for WhatsApp Web message broadcasting
 """
 
@@ -246,7 +246,7 @@ def main():
     """Main execution function"""
     
     print(f"\n{'='*60}")
-    print("🤖 WhatsApp Bot Blasting System")
+    print("Velo Bot")
     print("="*60)
     print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*60}\n")
