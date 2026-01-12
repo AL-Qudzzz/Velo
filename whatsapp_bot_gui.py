@@ -1,6 +1,6 @@
 """
-WhatsApp Bot GUI Application
-Tkinter-based graphical user interface for easy bot configuration and execution
+WhatsApp Bot GUI Application - Enhanced Version
+Features: Countdown timer, Pause/Resume, Fixed delay, Failed numbers log
 """
 
 import tkinter as tk
@@ -10,6 +10,7 @@ import pandas as pd
 from pathlib import Path
 import json
 from datetime import datetime
+import time as time_module
 
 import config
 import utils
@@ -19,8 +20,8 @@ from whatsapp_bot import setup_driver, wait_for_whatsapp_load, send_message, det
 class WhatsAppBotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("WhatsApp Bot Blasting System")
-        self.root.geometry("900x700")
+        self.root.title("WhatsApp Bot Blasting System - Enhanced")
+        self.root.geometry("950x750")
         self.root.resizable(True, True)
         
         # Variables
@@ -29,7 +30,10 @@ class WhatsAppBotGUI:
         self.column_mapping = {}
         self.contacts = []
         self.is_running = False
+        self.is_paused = False
         self.driver = None
+        self.current_index = 0
+        self.failed_contacts = []  # NEW: Store failed contacts
         
         # Delay settings variables
         self.base_delay = tk.IntVar(value=config.BASE_DELAY)
@@ -37,8 +41,13 @@ class WhatsAppBotGUI:
         self.jitter_max = tk.IntVar(value=config.JITTER_MAX)
         self.warmup_count = tk.IntVar(value=config.WARMUP_COUNT)
         self.warmup_delay = tk.IntVar(value=config.WARMUP_DELAY)
+        self.use_fixed_delay = tk.BooleanVar(value=False)  # NEW: Fixed delay mode
+        
+        # Progress file for GUI
+        self.progress_file = Path(__file__).parent / "progress_gui.json"
         
         self.setup_ui()
+        self.check_resume_on_startup()  # NEW: Check for saved progress
     
     def setup_ui(self):
         """Setup the user interface"""
@@ -50,7 +59,7 @@ class WhatsAppBotGUI:
         
         title_label = tk.Label(
             title_frame,
-            text="🤖 WhatsApp Bot Blasting System",
+            text="🤖 WhatsApp Bot Blasting System - Enhanced",
             font=("Arial", 18, "bold"),
             bg="#25D366",
             fg="white"
@@ -145,6 +154,23 @@ Lower delays = higher risk of account suspension. Use with caution!"""
                              justify=tk.LEFT, padx=10, pady=10, wraplength=800)
         info_label.pack(fill=tk.X)
         
+        # NEW: Fixed delay checkbox
+        fixed_delay_frame = tk.Frame(parent, bg="#E3F2FD", padx=10, pady=10)
+        fixed_delay_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.fixed_delay_check = tk.Checkbutton(
+            fixed_delay_frame,
+            text="🔒 Use Fixed Delay (no randomization)",
+            variable=self.use_fixed_delay,
+            command=self.toggle_fixed_delay,
+            font=("Arial", 10, "bold"),
+            bg="#E3F2FD"
+        )
+        self.fixed_delay_check.pack(side=tk.LEFT)
+        
+        tk.Label(fixed_delay_frame, text="← Enable for exact delay (e.g., always 3 minutes)", 
+                bg="#E3F2FD", fg="#1976D2").pack(side=tk.LEFT, padx=10)
+        
         # Settings frame
         settings_frame = tk.LabelFrame(parent, text="Delay Configuration", padx=20, pady=20)
         settings_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -152,24 +178,27 @@ Lower delays = higher risk of account suspension. Use with caution!"""
         # Base delay
         row = 0
         tk.Label(settings_frame, text="Base Delay (seconds):", font=("Arial", 10, "bold")).grid(row=row, column=0, sticky=tk.W, pady=10)
-        tk.Scale(settings_frame, from_=30, to=180, orient=tk.HORIZONTAL, variable=self.base_delay, 
-                length=300, command=self.update_estimate).grid(row=row, column=1, padx=10)
+        self.base_delay_scale = tk.Scale(settings_frame, from_=30, to=300, orient=tk.HORIZONTAL, variable=self.base_delay, 
+                length=300, command=self.update_estimate)
+        self.base_delay_scale.grid(row=row, column=1, padx=10)
         self.base_delay_label = tk.Label(settings_frame, text=f"{self.base_delay.get()}s")
         self.base_delay_label.grid(row=row, column=2)
         
         # Jitter min
         row += 1
         tk.Label(settings_frame, text="Jitter Min (seconds):", font=("Arial", 10, "bold")).grid(row=row, column=0, sticky=tk.W, pady=10)
-        tk.Scale(settings_frame, from_=0, to=30, orient=tk.HORIZONTAL, variable=self.jitter_min, 
-                length=300, command=self.update_estimate).grid(row=row, column=1, padx=10)
+        self.jitter_min_scale = tk.Scale(settings_frame, from_=0, to=30, orient=tk.HORIZONTAL, variable=self.jitter_min, 
+                length=300, command=self.update_estimate)
+        self.jitter_min_scale.grid(row=row, column=1, padx=10)
         self.jitter_min_label = tk.Label(settings_frame, text=f"{self.jitter_min.get()}s")
         self.jitter_min_label.grid(row=row, column=2)
         
         # Jitter max
         row += 1
         tk.Label(settings_frame, text="Jitter Max (seconds):", font=("Arial", 10, "bold")).grid(row=row, column=0, sticky=tk.W, pady=10)
-        tk.Scale(settings_frame, from_=0, to=60, orient=tk.HORIZONTAL, variable=self.jitter_max, 
-                length=300, command=self.update_estimate).grid(row=row, column=1, padx=10)
+        self.jitter_max_scale = tk.Scale(settings_frame, from_=0, to=60, orient=tk.HORIZONTAL, variable=self.jitter_max, 
+                length=300, command=self.update_estimate)
+        self.jitter_max_scale.grid(row=row, column=1, padx=10)
         self.jitter_max_label = tk.Label(settings_frame, text=f"{self.jitter_max.get()}s")
         self.jitter_max_label.grid(row=row, column=2)
         
@@ -211,6 +240,8 @@ Lower delays = higher risk of account suspension. Use with caution!"""
                  bg="#FF9800", fg="white").pack(side=tk.LEFT, padx=5)
         tk.Button(preset_frame, text="🚀 Fast (Risky)", command=lambda: self.apply_preset("fast"), 
                  bg="#F44336", fg="white").pack(side=tk.LEFT, padx=5)
+        tk.Button(preset_frame, text="⏱️ Fixed 3min", command=lambda: self.apply_preset("fixed3"), 
+                 bg="#9C27B0", fg="white").pack(side=tk.LEFT, padx=5)
     
     def setup_execution_tab(self, parent):
         """Setup execution and monitoring tab"""
@@ -223,9 +254,26 @@ Lower delays = higher risk of account suspension. Use with caution!"""
                                       bg="#4CAF50", fg="white", font=("Arial", 12, "bold"), height=2)
         self.start_button.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         
+        # NEW: Pause button
+        self.pause_button = tk.Button(control_frame, text="⏸️ Pause", command=self.pause_bot, 
+                                     bg="#FF9800", fg="white", font=("Arial", 12, "bold"), height=2, state=tk.DISABLED)
+        self.pause_button.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        
         self.stop_button = tk.Button(control_frame, text="⏹️ Stop", command=self.stop_bot, 
                                      bg="#F44336", fg="white", font=("Arial", 12, "bold"), height=2, state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        
+        # NEW: Countdown frame
+        countdown_frame = tk.LabelFrame(parent, text="⏱️ Countdown Timer", padx=10, pady=10, bg="#FFF9C4")
+        countdown_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.countdown_label = tk.Label(countdown_frame, text="--:--", font=("Arial", 24, "bold"), 
+                                       bg="#FFF9C4", fg="#F57C00")
+        self.countdown_label.pack()
+        
+        self.next_message_label = tk.Label(countdown_frame, text="Next: Waiting to start...", 
+                                          font=("Arial", 10), bg="#FFF9C4")
+        self.next_message_label.pack()
         
         # Progress frame
         progress_frame = tk.LabelFrame(parent, text="Progress", padx=10, pady=10)
@@ -241,7 +289,7 @@ Lower delays = higher risk of account suspension. Use with caution!"""
         log_frame = tk.LabelFrame(parent, text="Execution Log", padx=10, pady=10)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=15, width=80, font=("Courier", 9))
+        self.log_text = scrolledtext.ScrolledText(log_frame, height=10, width=80, font=("Courier", 9))
         self.log_text.pack(fill=tk.BOTH, expand=True)
         
         # Statistics frame
@@ -262,6 +310,27 @@ Lower delays = higher risk of account suspension. Use with caution!"""
         tk.Label(stats_grid, text="Remaining:", font=("Arial", 9, "bold")).grid(row=0, column=4, padx=10)
         self.remaining_label = tk.Label(stats_grid, text="0", font=("Arial", 9), fg="blue")
         self.remaining_label.grid(row=0, column=5, padx=10)
+        
+        # NEW: Export failed numbers button
+        tk.Button(stats_grid, text="📄 Export Failed Numbers", command=self.export_failed_numbers,
+                 bg="#607D8B", fg="white").grid(row=1, column=0, columnspan=6, pady=10)
+    
+    def toggle_fixed_delay(self):
+        """Toggle fixed delay mode"""
+        if self.use_fixed_delay.get():
+            # Disable jitter sliders
+            self.jitter_min_scale.config(state=tk.DISABLED)
+            self.jitter_max_scale.config(state=tk.DISABLED)
+            self.jitter_min.set(0)
+            self.jitter_max.set(0)
+            self.log("Fixed delay mode enabled - no randomization")
+        else:
+            # Enable jitter sliders
+            self.jitter_min_scale.config(state=tk.NORMAL)
+            self.jitter_max_scale.config(state=tk.NORMAL)
+            self.log("Fixed delay mode disabled - randomization enabled")
+        
+        self.update_estimate()
     
     def browse_file(self):
         """Browse for Excel/CSV file"""
@@ -332,21 +401,32 @@ Lower delays = higher risk of account suspension. Use with caution!"""
                 "jitter_min": 10,
                 "jitter_max": 20,
                 "warmup_count": 5,
-                "warmup_delay": 90
+                "warmup_delay": 90,
+                "fixed": False
             },
             "moderate": {
                 "base_delay": 45,
                 "jitter_min": 5,
                 "jitter_max": 15,
                 "warmup_count": 3,
-                "warmup_delay": 60
+                "warmup_delay": 60,
+                "fixed": False
             },
             "fast": {
                 "base_delay": 30,
                 "jitter_min": 3,
                 "jitter_max": 10,
                 "warmup_count": 2,
-                "warmup_delay": 30
+                "warmup_delay": 30,
+                "fixed": False
+            },
+            "fixed3": {  # NEW: Fixed 3 minutes
+                "base_delay": 180,
+                "jitter_min": 0,
+                "jitter_max": 0,
+                "warmup_count": 0,
+                "warmup_delay": 0,
+                "fixed": True
             }
         }
         
@@ -357,6 +437,8 @@ Lower delays = higher risk of account suspension. Use with caution!"""
             self.jitter_max.set(preset["jitter_max"])
             self.warmup_count.set(preset["warmup_count"])
             self.warmup_delay.set(preset["warmup_delay"])
+            self.use_fixed_delay.set(preset["fixed"])
+            self.toggle_fixed_delay()
             self.update_estimate()
             self.log(f"Applied preset: {preset_name.upper()}")
     
@@ -370,57 +452,143 @@ Lower delays = higher risk of account suspension. Use with caution!"""
         
         if self.df is not None:
             total = len(self.df)
-            avg_delay = self.base_delay.get() + (self.jitter_min.get() + self.jitter_max.get()) / 2
-            warmup_extra = self.warmup_delay.get() * min(total, self.warmup_count.get())
-            estimated_seconds = (avg_delay * total) + warmup_extra
+            
+            if self.use_fixed_delay.get():
+                # Fixed delay: exact time
+                avg_delay = self.base_delay.get()
+                estimated_seconds = avg_delay * total
+                mode_text = " (FIXED)"
+            else:
+                # Variable delay: with jitter
+                avg_delay = self.base_delay.get() + (self.jitter_min.get() + self.jitter_max.get()) / 2
+                warmup_extra = self.warmup_delay.get() * min(total, self.warmup_count.get())
+                estimated_seconds = (avg_delay * total) + warmup_extra
+                mode_text = ""
             
             hours = int(estimated_seconds // 3600)
             minutes = int((estimated_seconds % 3600) // 60)
             
-            estimate_text = f"For {total} messages: ~{hours}h {minutes}m"
+            estimate_text = f"For {total} messages: ~{hours}h {minutes}m{mode_text}"
             self.estimate_label.config(text=estimate_text)
+    
+    def check_resume_on_startup(self):
+        """Check if there's saved progress and ask to resume"""
+        if self.progress_file.exists():
+            try:
+                with open(self.progress_file, 'r') as f:
+                    progress = json.load(f)
+                
+                if progress.get('contacts') and progress.get('current_index', 0) < len(progress['contacts']):
+                    response = messagebox.askyesno(
+                        "Resume Previous Session",
+                        f"Found saved progress:\n\n"
+                        f"File: {progress.get('file_name', 'Unknown')}\n"
+                        f"Progress: {progress.get('current_index', 0)}/{len(progress.get('contacts', []))}\n"
+                        f"Success: {progress.get('success_count', 0)}\n"
+                        f"Failed: {progress.get('failed_count', 0)}\n\n"
+                        f"Do you want to resume?"
+                    )
+                    
+                    if response:
+                        self.load_progress(progress)
+                    else:
+                        self.progress_file.unlink()
+            except Exception as e:
+                self.log(f"Error loading progress: {str(e)}")
+    
+    def load_progress(self, progress):
+        """Load saved progress"""
+        try:
+            # Restore contacts
+            self.contacts = progress.get('contacts', [])
+            self.current_index = progress.get('current_index', 0)
+            self.failed_contacts = progress.get('failed_contacts', [])
+            
+            # Update UI
+            self.progress_bar['maximum'] = len(self.contacts)
+            self.progress_bar['value'] = self.current_index
+            
+            success = progress.get('success_count', 0)
+            failed = progress.get('failed_count', 0)
+            
+            self.update_progress(self.current_index, success, failed)
+            
+            self.log(f"Loaded progress: {self.current_index}/{len(self.contacts)} messages")
+            self.log(f"Success: {success}, Failed: {failed}")
+            
+            messagebox.showinfo("Progress Loaded", 
+                              f"Ready to resume from message {self.current_index + 1}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load progress:\n{str(e)}")
+    
+    def save_progress_state(self, success_count, failed_count):
+        """Save current progress to file"""
+        try:
+            progress = {
+                'file_name': Path(self.file_path.get()).name if self.file_path.get() else 'Unknown',
+                'contacts': self.contacts,
+                'current_index': self.current_index,
+                'success_count': success_count,
+                'failed_count': failed_count,
+                'failed_contacts': self.failed_contacts,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            with open(self.progress_file, 'w') as f:
+                json.dump(progress, f, indent=2)
+            
+            self.log(f"Progress saved: {self.current_index}/{len(self.contacts)}")
+            
+        except Exception as e:
+            self.log(f"Error saving progress: {str(e)}")
     
     def start_bot(self):
         """Start the bot in a separate thread"""
-        if self.df is None:
+        if self.df is None and not self.contacts:
             messagebox.showerror("Error", "Please load a file first!")
             return
         
-        if not self.phone_combo.get():
-            messagebox.showerror("Error", "Please select the phone column!")
-            return
-        
-        # Prepare column mapping
-        self.column_mapping = {
-            'phone': self.phone_combo.get(),
-            'name': self.name_combo.get() if self.name_combo.get() else None,
-            'message': self.message_combo.get() if self.message_combo.get() else None
-        }
-        
-        # Get default message
-        default_msg = self.default_message.get("1.0", tk.END).strip()
-        
-        # Prepare contacts
-        self.contacts = data_processor.prepare_contacts(self.df, self.column_mapping, default_msg)
-        
-        if not self.contacts:
-            messagebox.showerror("Error", "No valid contacts found!")
-            return
+        if not self.contacts:  # First time start
+            if not self.phone_combo.get():
+                messagebox.showerror("Error", "Please select the phone column!")
+                return
+            
+            # Prepare column mapping
+            self.column_mapping = {
+                'phone': self.phone_combo.get(),
+                'name': self.name_combo.get() if self.name_combo.get() else None,
+                'message': self.message_combo.get() if self.message_combo.get() else None
+            }
+            
+            # Get default message
+            default_msg = self.default_message.get("1.0", tk.END).strip()
+            
+            # Prepare contacts
+            self.contacts = data_processor.prepare_contacts(self.df, self.column_mapping, default_msg)
+            
+            if not self.contacts:
+                messagebox.showerror("Error", "No valid contacts found!")
+                return
+            
+            self.current_index = 0
+            self.failed_contacts = []
         
         # Confirm
         if not messagebox.askyesno("Confirm", 
-                                   f"Ready to send {len(self.contacts)} messages?\n\n"
+                                   f"Ready to send {len(self.contacts) - self.current_index} messages?\n\n"
                                    f"Base delay: {self.base_delay.get()}s\n"
-                                   f"Jitter: {self.jitter_min.get()}-{self.jitter_max.get()}s\n\n"
+                                   f"Mode: {'FIXED' if self.use_fixed_delay.get() else 'VARIABLE'}\n\n"
                                    "Continue?"):
             return
         
         # Update UI
         self.is_running = True
+        self.is_paused = False
         self.start_button.config(state=tk.DISABLED)
+        self.pause_button.config(state=tk.NORMAL)
         self.stop_button.config(state=tk.NORMAL)
         self.progress_bar['maximum'] = len(self.contacts)
-        self.progress_bar['value'] = 0
         
         # Start in thread
         thread = threading.Thread(target=self.run_bot, daemon=True)
@@ -433,26 +601,41 @@ Lower delays = higher risk of account suspension. Use with caution!"""
             self.log("Starting WhatsApp Bot...")
             self.log("="*60)
             
-            # Setup driver
-            self.log("Initializing Chrome WebDriver...")
-            self.driver = setup_driver()
-            
-            # Load WhatsApp
-            self.log("Loading WhatsApp Web...")
-            wait_for_whatsapp_load(self.driver)
-            self.log("WhatsApp Web loaded successfully!")
+            # Setup driver if not exists
+            if not self.driver:
+                self.log("Initializing Chrome WebDriver...")
+                self.driver = setup_driver()
+                
+                # Load WhatsApp
+                self.log("Loading WhatsApp Web...")
+                wait_for_whatsapp_load(self.driver)
+                self.log("WhatsApp Web loaded successfully!")
             
             # Send messages
-            success_count = 0
-            failed_count = 0
+            success_count = sum(1 for c in self.contacts[:self.current_index] if not c.get('failed', False))
+            failed_count = len(self.failed_contacts)
             
-            for idx, contact in enumerate(self.contacts):
+            for idx in range(self.current_index, len(self.contacts)):
                 if not self.is_running:
                     self.log("Stopped by user")
                     break
                 
+                # Check if paused
+                while self.is_paused and self.is_running:
+                    time_module.sleep(0.5)
+                
+                if not self.is_running:
+                    break
+                
+                contact = self.contacts[idx]
                 message_num = idx + 1
+                self.current_index = idx
+                
                 self.log(f"\n[{message_num}/{len(self.contacts)}] Processing {contact['name']}...")
+                
+                # Update next message label
+                self.root.after(0, self.next_message_label.config, 
+                              {"text": f"Sending to: {contact['name']} ({contact['phone']})"})
                 
                 # Send message
                 success = send_message(
@@ -467,40 +650,78 @@ Lower delays = higher risk of account suspension. Use with caution!"""
                     self.log(f"✓ Message sent to {contact['name']} ({contact['phone']})")
                 else:
                     failed_count += 1
+                    # Add to failed list
+                    self.failed_contacts.append({
+                        'phone': contact['phone'],
+                        'name': contact['name'],
+                        'reason': 'Send failed',
+                        'timestamp': datetime.now().isoformat()
+                    })
                     self.log(f"✗ Failed to send to {contact['name']} ({contact['phone']})")
                 
                 # Update UI
                 self.root.after(0, self.update_progress, message_num, success_count, failed_count)
                 
-                # Delay
+                # Save progress
+                self.save_progress_state(success_count, failed_count)
+                
+                # Delay with countdown
                 if message_num < len(self.contacts):
                     delay = self.calculate_custom_delay(message_num)
-                    self.log(f"Waiting {delay:.1f}s before next message...")
+                    self.log(f"Waiting {delay:.0f}s before next message...")
                     
-                    # Wait with ability to stop
-                    for _ in range(int(delay)):
+                    # Show next contact info
+                    if message_num < len(self.contacts):
+                        next_contact = self.contacts[message_num]
+                        self.root.after(0, self.next_message_label.config,
+                                      {"text": f"Next: {next_contact['name']} ({next_contact['phone']})"})
+                    
+                    # Countdown timer
+                    for remaining in range(int(delay), 0, -1):
                         if not self.is_running:
                             break
-                        import time
-                        time.sleep(1)
+                        
+                        # Check if paused
+                        while self.is_paused and self.is_running:
+                            time_module.sleep(0.5)
+                        
+                        if not self.is_running:
+                            break
+                        
+                        # Update countdown display
+                        minutes = remaining // 60
+                        seconds = remaining % 60
+                        self.root.after(0, self.countdown_label.config, 
+                                      {"text": f"{minutes:02d}:{seconds:02d}"})
+                        
+                        time_module.sleep(1)
             
             self.log("\n" + "="*60)
             self.log("COMPLETED!")
             self.log(f"Success: {success_count}, Failed: {failed_count}")
             self.log("="*60)
             
+            # Clear countdown
+            self.root.after(0, self.countdown_label.config, {"text": "DONE!"})
+            self.root.after(0, self.next_message_label.config, {"text": "All messages sent"})
+            
             messagebox.showinfo("Complete", 
                               f"Finished sending messages!\n\n"
                               f"Success: {success_count}\n"
                               f"Failed: {failed_count}")
+            
+            # Clear progress file
+            if self.progress_file.exists():
+                self.progress_file.unlink()
             
         except Exception as e:
             self.log(f"ERROR: {str(e)}")
             messagebox.showerror("Error", f"An error occurred:\n{str(e)}")
         
         finally:
-            if self.driver:
+            if self.driver and not self.is_paused:
                 self.driver.quit()
+                self.driver = None
             self.is_running = False
             self.root.after(0, self.reset_ui)
     
@@ -510,6 +731,12 @@ Lower delays = higher risk of account suspension. Use with caution!"""
         
         delay = self.base_delay.get()
         
+        # Check if fixed delay mode
+        if self.use_fixed_delay.get():
+            # Fixed delay - no jitter, no warmup
+            return float(delay)
+        
+        # Variable delay mode
         if message_count < self.warmup_count.get():
             delay += self.warmup_delay.get()
         
@@ -518,10 +745,24 @@ Lower delays = higher risk of account suspension. Use with caution!"""
         
         return delay
     
+    def pause_bot(self):
+        """Pause the bot"""
+        if self.is_running and not self.is_paused:
+            self.is_paused = True
+            self.pause_button.config(text="▶️ Resume", bg="#4CAF50")
+            self.log("⏸️ PAUSED - Click Resume to continue")
+            self.countdown_label.config(text="PAUSED")
+            messagebox.showinfo("Paused", "Bot paused. Progress saved.\nClick Resume to continue.")
+        elif self.is_paused:
+            self.is_paused = False
+            self.pause_button.config(text="⏸️ Pause", bg="#FF9800")
+            self.log("▶️ RESUMED")
+    
     def stop_bot(self):
         """Stop the bot"""
-        if messagebox.askyesno("Confirm", "Are you sure you want to stop?"):
+        if messagebox.askyesno("Confirm", "Are you sure you want to stop?\n\nProgress will be saved."):
             self.is_running = False
+            self.is_paused = False
             self.log("Stopping...")
     
     def update_progress(self, current, success, failed):
@@ -535,8 +776,45 @@ Lower delays = higher risk of account suspension. Use with caution!"""
     def reset_ui(self):
         """Reset UI after completion"""
         self.start_button.config(state=tk.NORMAL)
+        self.pause_button.config(state=tk.DISABLED, text="⏸️ Pause", bg="#FF9800")
         self.stop_button.config(state=tk.DISABLED)
         self.update_status("Ready")
+    
+    def export_failed_numbers(self):
+        """Export failed numbers to file"""
+        if not self.failed_contacts:
+            messagebox.showinfo("No Failed Numbers", "No failed numbers to export.")
+            return
+        
+        try:
+            # save location
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("CSV files", "*.csv"), ("All files", "*.*")],
+                initialfile=f"failed_numbers_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            )
+            
+            if filename:
+                with open(filename, 'w', encoding='utf-8') as f:
+                    f.write("Failed WhatsApp Numbers\n")
+                    f.write("="*60 + "\n")
+                    f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"Total Failed: {len(self.failed_contacts)}\n")
+                    f.write("="*60 + "\n\n")
+                    
+                    for idx, contact in enumerate(self.failed_contacts, 1):
+                        f.write(f"{idx}. {contact['name']}\n")
+                        f.write(f"   Phone: {contact['phone']}\n")
+                        f.write(f"   Reason: {contact.get('reason', 'Unknown')}\n")
+                        f.write(f"   Time: {contact.get('timestamp', 'Unknown')}\n")
+                        f.write("\n")
+                
+                messagebox.showinfo("Export Successful", 
+                                  f"Failed numbers exported to:\n{filename}")
+                self.log(f"Exported {len(self.failed_contacts)} failed numbers to {filename}")
+        
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export:\n{str(e)}")
     
     def log(self, message):
         """Add message to log"""
