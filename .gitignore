@@ -4,6 +4,12 @@ venv/
 env/
 .env
 
+# Inno Setup
+*.iss
+
+#docs
+docs/
+
 # Python cache
 __pycache__/
 *.py[cod]
@@ -28,17 +34,27 @@ wheels/
 .installed.cfg
 *.egg
 
+# Built executables & installers
+*.exe
+*.spec
+installer_output/
+
 # Session data (contains WhatsApp login)
 whatsapp_session/
+src/whatsapp_session/
 
 # Progress and logs
 progress.json
+progress_gui.json
+src/progress_gui.json
 bot_log.txt
+src/bot_log.txt
 *.log
 
 # IDE
 .vscode/
 .idea/
+.vs/
 *.swp
 *.swo
 *~
