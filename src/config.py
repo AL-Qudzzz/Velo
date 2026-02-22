@@ -108,6 +108,18 @@ LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 # ============================================================================
+# ANTI-BAN SETTINGS
+# ============================================================================
+# Auto-pause after N successful messages to avoid WhatsApp rate limits
+PAUSE_LIMIT = 45
+
+# Auto-resume after pause: True = automatically resume after AUTO_RESUME_HOURS
+AUTO_RESUME_ENABLED = True
+
+# Hours to wait before auto-resuming (options: 3 or 24)
+AUTO_RESUME_HOURS = 3
+
+# ============================================================================
 # SAFETY LIMITS
 # ============================================================================
 MAX_MESSAGES_PER_SESSION = 100  # Safety limit to prevent abuse

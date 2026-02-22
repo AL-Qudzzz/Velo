@@ -1,6 +1,7 @@
 """
 Velo Bot GUI Application - Enhanced Version
-Features: Countdown timer, Pause/Resume, Fixed delay, Failed numbers log
+Features: Countdown timer, Pause/Resume, Fixed delay, Failed numbers log,
+          Auto-Pause Anti-Ban (pause every N successes + auto-resume)
 """
 
 import tkinter as tk
@@ -9,7 +10,7 @@ import threading
 import pandas as pd
 from pathlib import Path
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import time as time_module
 
 from . import config
@@ -33,7 +34,7 @@ class WhatsAppBotGUI:
         self.is_paused = False
         self.driver = None
         self.current_index = 0
-        self.failed_contacts = []  # NEW: Store failed contacts
+        self.failed_contacts = []  # Store failed contacts
         
         # Delay settings variables
         self.base_delay = tk.IntVar(value=config.BASE_DELAY)
@@ -41,13 +42,21 @@ class WhatsAppBotGUI:
         self.jitter_max = tk.IntVar(value=config.JITTER_MAX)
         self.warmup_count = tk.IntVar(value=config.WARMUP_COUNT)
         self.warmup_delay = tk.IntVar(value=config.WARMUP_DELAY)
-        self.use_fixed_delay = tk.BooleanVar(value=False)  # NEW: Fixed delay mode
+        self.use_fixed_delay = tk.BooleanVar(value=False)  # Fixed delay mode
+        
+        # Anti-Ban / Auto-Pause settings
+        self.pause_limit = tk.IntVar(value=config.PAUSE_LIMIT)
+        self.auto_resume_enabled = tk.BooleanVar(value=config.AUTO_RESUME_ENABLED)
+        self.auto_resume_hours = tk.DoubleVar(value=config.AUTO_RESUME_HOURS)
+        self._auto_resume_thread = None         # holds the auto-resume countdown thread
+        self._auto_resume_cancel = threading.Event()  # set this to cancel the countdown
+        self._session_success_count = 0         # success counter for this run (resets each start)
         
         # Progress file for GUI
         self.progress_file = Path(__file__).parent / "progress_gui.json"
         
         self.setup_ui()
-        self.check_resume_on_startup()  # NEW: Check for saved progress
+        self.check_resume_on_startup()  # Check for saved progress
     
     def setup_ui(self):
         """Setup the user interface"""
@@ -80,10 +89,15 @@ class WhatsAppBotGUI:
         notebook.add(tab2, text="⏱️ Delay Settings")
         self.setup_delay_tab(tab2)
         
-        # Tab 3: Execution
+        # Tab 3: Anti-Ban Settings
         tab3 = tk.Frame(notebook)
-        notebook.add(tab3, text="▶️ Execution")
-        self.setup_execution_tab(tab3)
+        notebook.add(tab3, text="🛡️ Anti-Ban")
+        self.setup_antiban_tab(tab3)
+        
+        # Tab 4: Execution
+        tab4 = tk.Frame(notebook)
+        notebook.add(tab4, text="▶️ Execution")
+        self.setup_execution_tab(tab4)
         
         # Status bar
         self.status_bar = tk.Label(
@@ -242,6 +256,116 @@ Lower delays = higher risk of account suspension. Use with caution!"""
                  bg="#F44336", fg="white").pack(side=tk.LEFT, padx=5)
         tk.Button(preset_frame, text="⏱️ Fixed 3min", command=lambda: self.apply_preset("fixed3"), 
                  bg="#9C27B0", fg="white").pack(side=tk.LEFT, padx=5)
+    
+    def setup_antiban_tab(self, parent):
+        """Setup Anti-Ban / Auto-Pause configuration tab"""
+        
+        # Header info
+        info_frame = tk.Frame(parent, bg="#FFF3CD", padx=12, pady=10)
+        info_frame.pack(fill=tk.X, padx=10, pady=10)
+        tk.Label(
+            info_frame,
+            text="🛡️  Fitur ini otomatis PAUSE setelah N pesan sukses untuk menghindari blok WhatsApp.\n"
+                 "Progress selalu disimpan sebelum pause — aman resume kapan saja.",
+            bg="#FFF3CD", fg="#856404", justify=tk.LEFT, wraplength=800
+        ).pack(anchor=tk.W)
+        
+        # --- Pause limit ---
+        limit_frame = tk.LabelFrame(parent, text="Auto-Pause Limit", padx=20, pady=15)
+        limit_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        tk.Label(limit_frame, text="Pause setelah berapa pesan SUKSES:",
+                 font=("Arial", 10, "bold")).grid(row=0, column=0, sticky=tk.W, pady=8)
+        
+        pause_scale = tk.Scale(
+            limit_frame, from_=5, to=200, orient=tk.HORIZONTAL,
+            variable=self.pause_limit, length=300
+        )
+        pause_scale.grid(row=0, column=1, padx=10)
+        self.pause_limit_val_label = tk.Label(limit_frame,
+            text=f"{self.pause_limit.get()} pesan", fg="#D32F2F", font=("Arial", 10, "bold"))
+        self.pause_limit_val_label.grid(row=0, column=2)
+        
+        def _update_limit_label(*_):
+            self.pause_limit_val_label.config(text=f"{self.pause_limit.get()} pesan")
+        self.pause_limit.trace_add("write", _update_limit_label)
+        
+        # Preset buttons for common limits
+        preset_lim_frame = tk.Frame(limit_frame)
+        preset_lim_frame.grid(row=1, column=0, columnspan=3, pady=6)
+        tk.Label(preset_lim_frame, text="Preset:", font=("Arial", 9)).pack(side=tk.LEFT, padx=4)
+        for lbl, val in [("30 (Aman)", 30), ("45 (Default)", 45), ("60 (Moderate)", 60), ("100 (Berani)", 100)]:
+            tk.Button(
+                preset_lim_frame, text=lbl,
+                command=lambda v=val: self.pause_limit.set(v),
+                bg="#607D8B", fg="white", padx=6
+            ).pack(side=tk.LEFT, padx=3)
+        
+        # --- Auto-resume ---
+        resume_frame = tk.LabelFrame(parent, text="Auto-Resume setelah Pause", padx=20, pady=15)
+        resume_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.auto_resume_check = tk.Checkbutton(
+            resume_frame,
+            text="🔄 Aktifkan Auto-Resume (lanjut otomatis setelah jeda)",
+            variable=self.auto_resume_enabled,
+            font=("Arial", 10, "bold")
+        )
+        self.auto_resume_check.grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=4)
+        
+        tk.Label(resume_frame, text="Lanjut otomatis setelah:",
+                 font=("Arial", 10)).grid(row=1, column=0, sticky=tk.W, pady=8)
+        
+        resume_combo = ttk.Combobox(
+            resume_frame, width=20, state="readonly",
+            values=["3 jam (Recommended)", "24 jam (Reset limit WA)", "Manual (tidak auto)"]
+        )
+        resume_combo.set("3 jam (Recommended)")
+        resume_combo.grid(row=1, column=1, padx=10)
+        
+        def _on_resume_choice(evt):
+            sel = resume_combo.get()
+            if "3" in sel:
+                self.auto_resume_hours.set(3)
+                self.auto_resume_enabled.set(True)
+            elif "24" in sel:
+                self.auto_resume_hours.set(24)
+                self.auto_resume_enabled.set(True)
+            else:
+                self.auto_resume_enabled.set(False)
+        resume_combo.bind("<<ComboboxSelected>>", _on_resume_choice)
+        
+        # --- Status / countdown panel ---
+        status_frame = tk.LabelFrame(parent, text="Status Auto-Pause", padx=20, pady=15)
+        status_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.antiban_status_label = tk.Label(
+            status_frame, text="⬤  Idle",
+            font=("Arial", 11, "bold"), fg="#757575"
+        )
+        self.antiban_status_label.pack()
+        
+        self.antiban_countdown_label = tk.Label(
+            status_frame, text="",
+            font=("Arial", 20, "bold"), fg="#E65100"
+        )
+        self.antiban_countdown_label.pack(pady=4)
+        
+        self.antiban_info_label = tk.Label(
+            status_frame,
+            text=f"Akan pause setiap {self.pause_limit.get()} pesan sukses.",
+            font=("Arial", 9), fg="#555"
+        )
+        self.antiban_info_label.pack()
+        
+        # Manual resume button (visible only during auto-pause)
+        self.manual_resume_btn = tk.Button(
+            status_frame, text="▶️ Resume Sekarang",
+            command=self._manual_resume,
+            bg="#4CAF50", fg="white", font=("Arial", 10, "bold"),
+            state=tk.DISABLED
+        )
+        self.manual_resume_btn.pack(pady=8)
     
     def setup_execution_tab(self, parent):
         """Setup execution and monitoring tab"""
@@ -614,13 +738,14 @@ Lower delays = higher risk of account suspension. Use with caution!"""
             # Send messages
             success_count = sum(1 for c in self.contacts[:self.current_index] if not c.get('failed', False))
             failed_count = len(self.failed_contacts)
+            self._session_success_count = 0  # reset per-run success counter
             
             for idx in range(self.current_index, len(self.contacts)):
                 if not self.is_running:
                     self.log("Stopped by user")
                     break
                 
-                # Check if paused
+                # Check if paused (manual or auto)
                 while self.is_paused and self.is_running:
                     time_module.sleep(0.5)
                 
@@ -647,6 +772,7 @@ Lower delays = higher risk of account suspension. Use with caution!"""
                 
                 if success:
                     success_count += 1
+                    self._session_success_count += 1
                     self.log(f"✓ Message sent to {contact['name']} ({contact['phone']})")
                 else:
                     failed_count += 1
@@ -662,7 +788,60 @@ Lower delays = higher risk of account suspension. Use with caution!"""
                 # Update UI
                 self.root.after(0, self.update_progress, message_num, success_count, failed_count)
                 
-                # Save progress
+                # ── AUTO-PAUSE CHECK ──────────────────────────────────────
+                limit = self.pause_limit.get()
+                if (limit > 0 and
+                        self._session_success_count > 0 and
+                        self._session_success_count % limit == 0 and
+                        idx < len(self.contacts) - 1):   # don't pause on last
+                    
+                    # 1. Save progress BEFORE pausing
+                    self.save_progress_state(success_count, failed_count)
+                    
+                    # 2. Pause the bot
+                    self.is_paused = True
+                    self.log(f"")
+                    self.log("=" * 60)
+                    self.log(f"⛔ AUTO-PAUSE: {limit} pesan sukses tercapai!")
+                    self.log("Progress sudah disimpan. Bot akan lanjut otomatis atau klik Resume.")
+                    self.log("=" * 60)
+                    
+                    # 3. Update UI
+                    self.root.after(0, self.countdown_label.config, {"text": "AUTO-PAUSE"})
+                    self.root.after(0, self.pause_button.config,
+                                   {"text": "▶️ Resume", "bg": "#4CAF50"})
+                    self.root.after(0, self.antiban_status_label.config,
+                                   {"text": f"⛔  AUTO-PAUSED setelah {limit} sukses",
+                                    "fg": "#D32F2F"})
+                    self.root.after(0, self.manual_resume_btn.config, {"state": tk.NORMAL})
+                    self.root.after(0, self.antiban_info_label.config,
+                                   {"text": "Progress tersimpan. Resume manual atau tunggu auto-resume."})
+                    
+                    # 4. Start auto-resume countdown (if enabled)
+                    if self.auto_resume_enabled.get():
+                        hours = self.auto_resume_hours.get()
+                        self._auto_resume_cancel.clear()
+                        self._auto_resume_thread = threading.Thread(
+                            target=self._auto_resume_timer,
+                            args=(hours,),
+                            daemon=True
+                        )
+                        self._auto_resume_thread.start()
+                    
+                    # 5. Wait while paused
+                    while self.is_paused and self.is_running:
+                        time_module.sleep(0.5)
+                    
+                    # 6. Clear auto-pause UI on resume
+                    self.root.after(0, self.antiban_countdown_label.config, {"text": ""})
+                    self.root.after(0, self.antiban_status_label.config,
+                                   {"text": "⬤  Berjalan", "fg": "#388E3C"})
+                    self.root.after(0, self.manual_resume_btn.config, {"state": tk.DISABLED})
+                    if self.is_running:
+                        self.log("▶️ RESUMED — melanjutkan pengiriman...")
+                # ─────────────────────────────────────────────────────────
+                
+                # Save progress after each message
                 self.save_progress_state(success_count, failed_count)
                 
                 # Delay with countdown
@@ -746,7 +925,7 @@ Lower delays = higher risk of account suspension. Use with caution!"""
         return delay
     
     def pause_bot(self):
-        """Pause the bot"""
+        """Pause / Resume the bot (manual)"""
         if self.is_running and not self.is_paused:
             self.is_paused = True
             self.pause_button.config(text="▶️ Resume", bg="#4CAF50")
@@ -754,9 +933,48 @@ Lower delays = higher risk of account suspension. Use with caution!"""
             self.countdown_label.config(text="PAUSED")
             messagebox.showinfo("Paused", "Bot paused. Progress saved.\nClick Resume to continue.")
         elif self.is_paused:
+            # Cancel any running auto-resume countdown
+            self._auto_resume_cancel.set()
             self.is_paused = False
             self.pause_button.config(text="⏸️ Pause", bg="#FF9800")
+            self.antiban_status_label.config(text="⬤  Berjalan", fg="#388E3C")
+            self.antiban_countdown_label.config(text="")
+            self.manual_resume_btn.config(state=tk.DISABLED)
             self.log("▶️ RESUMED")
+    
+    def _manual_resume(self):
+        """Resume button on the Anti-Ban tab"""
+        if self.is_paused:
+            self._auto_resume_cancel.set()
+            self.is_paused = False
+            self.pause_button.config(text="⏸️ Pause", bg="#FF9800")
+            self.antiban_status_label.config(text="⬤  Berjalan", fg="#388E3C")
+            self.antiban_countdown_label.config(text="")
+            self.manual_resume_btn.config(state=tk.DISABLED)
+            self.log("▶️ RESUMED (manual dari tab Anti-Ban)")
+    
+    def _auto_resume_timer(self, hours: float):
+        """Countdown timer for auto-resume (runs in background thread)"""
+        total_seconds = int(hours * 3600)
+        self.log(f"⏳ Auto-resume dalam {hours:.0f} jam ({total_seconds // 60} menit)...")
+        
+        for remaining in range(total_seconds, 0, -1):
+            if self._auto_resume_cancel.is_set():
+                return  # cancelled by manual resume or stop
+            if not self.is_running:
+                return
+            
+            h = remaining // 3600
+            m = (remaining % 3600) // 60
+            s = remaining % 60
+            countdown_text = f"{h:02d}:{m:02d}:{s:02d}"
+            self.root.after(0, self.antiban_countdown_label.config, {"text": countdown_text})
+            time_module.sleep(1)
+        
+        # Time's up — resume if still paused
+        if not self._auto_resume_cancel.is_set() and self.is_paused and self.is_running:
+            self.log(f"🔔 Auto-resume dipicu setelah {hours:.0f} jam!")
+            self.root.after(0, self._manual_resume)
     
     def stop_bot(self):
         """Stop the bot"""
@@ -778,6 +996,10 @@ Lower delays = higher risk of account suspension. Use with caution!"""
         self.start_button.config(state=tk.NORMAL)
         self.pause_button.config(state=tk.DISABLED, text="⏸️ Pause", bg="#FF9800")
         self.stop_button.config(state=tk.DISABLED)
+        self.antiban_status_label.config(text="⬤  Idle", fg="#757575")
+        self.antiban_countdown_label.config(text="")
+        self.manual_resume_btn.config(state=tk.DISABLED)
+        self._session_success_count = 0
         self.update_status("Ready")
     
     def export_failed_numbers(self):
