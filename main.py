@@ -6,27 +6,36 @@ GUI Application launcher for Windows executable build
 import sys
 import tkinter as tk
 from tkinter import messagebox
+import os
 
 def main():
     """Main entry point for the application"""
+    # Create src directory if not exists
+    if not os.path.exists("src"):
+        os.makedirs("src")
+
     try:
-        # Import the GUI application
-        from src.whatsapp_bot_gui import WhatsAppBotGUI
-        
-        # Create root window
-        root = tk.Tk()
-        
-        # Create application instance
-        app = WhatsAppBotGUI(root)
-        
-        # Start the GUI event loop
-        root.mainloop()
-        
+        # Check for Chrome
+        from src.utils import check_chrome_installed
+        if not check_chrome_installed():
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showerror("Error", "Google Chrome not found! Please install Chrome to use this bot.")
+            sys.exit(1)
+
+        # Run Modern GUI
+        from src.modern_gui import ModernApp
+        app = ModernApp()
+        app.mainloop()
+
     except ImportError as e:
         error_msg = f"Failed to import required modules:\n{str(e)}\n\nPlease ensure all dependencies are installed."
-        if 'tk' in sys.modules:
+        # Attempt to use tkinter messagebox if possible, otherwise print to stderr
+        try:
+            root = tk.Tk()
+            root.withdraw() # Hide the main window
             messagebox.showerror("Import Error", error_msg)
-        else:
+        except tk.TclError: # Catch error if Tkinter is not available/initialized
             print(f"ERROR: {error_msg}", file=sys.stderr)
         sys.exit(1)
         

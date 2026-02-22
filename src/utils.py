@@ -244,3 +244,51 @@ def display_summary(total: int, estimated_time: float):
     print(f"Base delay: {config.BASE_DELAY}s + jitter ({config.JITTER_MIN}-{config.JITTER_MAX}s)")
     print(f"Warm-up messages: {config.WARMUP_COUNT} (with +{config.WARMUP_DELAY}s delay)")
     print("="*60 + "\n")
+
+# ============================================================================
+# SYSTEM CHECKS
+# ============================================================================
+def check_chrome_installed() -> bool:
+    """
+    Check if Google Chrome is installed on the system (Windows)
+    
+    Returns:
+        True if installed, False otherwise
+    """
+    import os
+    import sys
+    
+    if sys.platform != 'win32':
+        # Assume true for non-Windows for now or check binary
+        return True
+        
+    # Check Registry
+    try:
+        import winreg
+        key_path = r"SOFTWARE\Google\Chrome\BLBeacon"
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                return True
+        except WindowsError:
+            pass
+            
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
+                return True
+        except WindowsError:
+            pass
+    except ImportError:
+        pass
+        
+    # Check File Paths
+    chrome_paths = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        os.path.expanduser(r"~\AppData\Local\Google\Chrome\Application\chrome.exe")
+    ]
+    
+    for path in chrome_paths:
+        if os.path.exists(path):
+            return True
+            
+    return False
