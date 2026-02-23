@@ -67,6 +67,9 @@ class AutoBlastApp(ctk.CTk):
         self.v_auto_resume   = tk.BooleanVar(value=config.AUTO_RESUME_ENABLED)
         self.v_resume_hours  = tk.DoubleVar(value=config.AUTO_RESUME_HOURS)
 
+        # ── Campaign start row (1-based, user-settable) ──────────────────────
+        self.v_start_row     = tk.IntVar(value=1)
+
         # ── UI ───────────────────────────────────────────────────────────────
         self._build_layout()
         self._check_resume_on_startup()
@@ -332,13 +335,33 @@ class AutoBlastApp(ctk.CTk):
                                     sticky="ew", padx=8, pady=5)
         self._txt_default_msg.insert("1.0", "Hello {Name}! This is a message from us.")
 
+        # ── Start from Row ────────────────────────────────────────────────────
+        row_f = ctk.CTkFrame(f)
+        row_f.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        ctk.CTkLabel(row_f, text="4. Start from Row",
+                     font=ctk.CTkFont(size=14, weight="bold")).pack(
+            anchor="w", padx=16, pady=(10, 4))
+        row_inner = ctk.CTkFrame(row_f, fg_color="transparent")
+        row_inner.pack(fill="x", padx=16, pady=(0, 10))
+        ctk.CTkLabel(row_inner,
+                     text="Mulai blast dari baris ke (1 = awal data):",
+                     text_color="#9CA3AF").pack(side="left", padx=(0, 12))
+        self._ent_start_row = ctk.CTkEntry(
+            row_inner, textvariable=self.v_start_row,
+            width=80, justify="center")
+        self._ent_start_row.pack(side="left")
+        ctk.CTkLabel(row_inner,
+                     text="  ← ubah angka ini jika ingin skip baris awal atau lanjut dari tertentu",
+                     text_color="#6B7280", font=ctk.CTkFont(size=11)).pack(
+            side="left", padx=(8, 0))
+
         # ── Start button shortcut ─────────────────────────────────────────────
         ctk.CTkButton(
             f, text="▶  Start Campaign →", height=44,
             font=ctk.CTkFont(size=14, weight="bold"),
             fg_color="#16A34A", hover_color="#15803D",
             command=self._start_campaign
-        ).grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        ).grid(row=4, column=0, sticky="ew", pady=(8, 0))
 
     # ═════════════════════════════════════════════════════════════════════════
     # VIEW: DELAY
@@ -848,26 +871,32 @@ class AutoBlastApp(ctk.CTk):
             contacts = p.get("contacts", [])
             idx = p.get("current_index", 0)
             if contacts and idx < len(contacts):
+                next_row = idx + 1   # 1-based for display
                 ans = messagebox.askyesno(
                     "Resume Previous Session?",
                     f"Found saved progress:\n\n"
-                    f"File: {p.get('file_name', '?')}\n"
-                    f"Progress: {idx}/{len(contacts)}\n"
-                    f"Success: {p.get('success_count', 0)}\n"
-                    f"Failed: {p.get('failed_count', 0)}\n\n"
-                    "Resume from where you left off?"
+                    f"File    : {p.get('file_name', '?')}\n"
+                    f"Lanjut dari baris : {next_row} / {len(contacts)}\n"
+                    f"Success : {p.get('success_count', 0)}\n"
+                    f"Failed  : {p.get('failed_count', 0)}\n\n"
+                    "Resume dari posisi terakhir?"
                 )
                 if ans:
-                    self.contacts = contacts
-                    self.current_index = idx
+                    self.contacts       = contacts
+                    self.current_index  = idx
                     self.failed_contacts = p.get("failed_contacts", [])
+                    # Sync the "Start from Row" field so Campaign tab shows
+                    # the correct resume point (no-op if user changes it).
+                    self.v_start_row.set(next_row)
                     self._lbl_remaining.configure(
                         text=str(len(contacts) - idx))
                     self._lbl_success.configure(
                         text=str(p.get("success_count", 0)))
                     self._lbl_failed.configure(
                         text=str(p.get("failed_count", 0)))
-                    self._log(f"Loaded progress: resume from index {idx}")
+                    self._log(
+                        f"✅ Progress dimuat — lanjut dari baris {next_row} "
+                        f"({len(contacts) - idx} kontak tersisa)")
                 else:
                     self.progress_file.unlink(missing_ok=True)
         except Exception as e:
@@ -911,13 +940,40 @@ class AutoBlastApp(ctk.CTk):
             if not self.contacts:
                 messagebox.showerror("Error", "No valid contacts found!")
                 return
-            self.current_index = 0
+
+            # Apply user-defined start row — match against original_row
+            # (the actual Excel/spreadsheet row) because prepare_contacts
+            # silently skips invalid phone rows, so contacts[N] != Excel row N+1.
+            try:
+                start_row = max(1, int(self.v_start_row.get()))
+            except (ValueError, tk.TclError):
+                start_row = 1
+
+            self.current_index = 0  # fallback: start from beginning
+            found = False
+            for ci, c in enumerate(self.contacts):
+                if c.get("original_row", ci + 1) >= start_row:
+                    self.current_index = ci
+                    found = True
+                    break
+            if not found:
+                messagebox.showerror(
+                    "Error",
+                    f"Start row {start_row} melebihi semua baris data valid "
+                    f"({len(self.contacts)} kontak ditemukan).\n"
+                    f"Ubah ke angka yang lebih kecil.")
+                self.contacts = []
+                return
             self.failed_contacts = []
 
+        # Show actual spreadsheet row in confirm dialog
+        _actual_row = self.contacts[self.current_index].get(
+            "original_row", self.current_index + 1)
         remaining = len(self.contacts) - self.current_index
         if not messagebox.askyesno(
             "Confirm Start",
-            f"Ready to send {remaining} messages.\n\n"
+            f"Ready to send {remaining} messages.\n"
+            f"(mulai dari baris Excel ke-{_actual_row})\n\n"
             f"Base delay: {self.v_base_delay.get()}s  |  "
             f"Auto-pause at: {self.v_pause_limit.get()} successes\n\n"
             "Proceed?"
@@ -955,9 +1011,11 @@ class AutoBlastApp(ctk.CTk):
 
     def _stop_campaign(self):
         if messagebox.askyesno("Stop", "Stop sending?\n\nProgress will be saved."):
+            # Signal the bot thread to exit cleanly; is_paused=False lets
+            # the pause-while-loop unblock so the thread can reach finally.
             self.is_running = False
-            self.is_paused = False
-            self._log("⏹ Stopping...")
+            self.is_paused  = False
+            self._log("⏹ Stopping — progress will be saved…")
 
     # ─────────────────────────────────────────────────────────────────────────
     # BOT THREAD
@@ -975,10 +1033,20 @@ class AutoBlastApp(ctk.CTk):
                 wait_for_whatsapp_load(self.driver)
                 self._log("✅ WhatsApp Web loaded!")
 
-            success_count = 0
+            # Seed success_count from previously-saved progress so totals
+            # are correct when resuming after an app-restart.
+            try:
+                if self.progress_file.exists():
+                    with open(self.progress_file, "r", encoding="utf-8") as _pf:
+                        _pd = json.load(_pf)
+                    success_count = _pd.get("success_count", 0)
+                else:
+                    success_count = 0
+            except Exception:
+                success_count = 0
             failed_count  = len(self.failed_contacts)
             total = len(self.contacts)
-            self._session_success = 0
+            self._session_success = 0   # counts only THIS batch (resets each pause)
 
             for idx in range(self.current_index, total):
                 if not self.is_running:
@@ -990,14 +1058,16 @@ class AutoBlastApp(ctk.CTk):
                 if not self.is_running: break
 
                 contact = self.contacts[idx]
-                self.current_index = idx
+                # Advance index BEFORE sending so that if we pause/save here,
+                # resume will start from the NEXT contact (not re-send this one).
+                self.current_index = idx + 1
                 num = idx + 1
 
                 _name, _phone = contact['name'], contact['phone']
                 self.after(0, lambda n=_name, p=_phone:
                            self._lbl_next.configure(
                                text=f"Sending to: {n} ({p})"))
-                self._log(f"\n[{num}/{total}] → {contact['name']} ({contact['phone']})")
+                self._log(f"\n[{num}/{total}] Excel baris {contact.get('original_row', num)} → {contact['name']} ({contact['phone']})")
 
                 ok = send_message(self.driver, contact["phone"],
                                   contact["message"], contact["name"])
@@ -1068,7 +1138,10 @@ class AutoBlastApp(ctk.CTk):
                         text="⬤  Running", text_color="#22C55E"))
                     self.after(0, lambda: self._btn_ab_resume.configure(state="disabled"))
                     if self.is_running:
-                        self._log("▶️ RESUMED — continuing…")
+                        # Reset per-batch counter so next N sends trigger the
+                        # next pause cleanly (instead of accumulating indefinitely).
+                        self._session_success = 0
+                        self._log("▶️ RESUMED — batch counter reset, continuing…")
                 # ─────────────────────────────────────────────────────────
 
                 # Regular progress save
@@ -1095,24 +1168,39 @@ class AutoBlastApp(ctk.CTk):
                         self.after(0, lambda t=_t: self._lbl_countdown.configure(text=t))
                         time_module.sleep(1)
 
-            # ── Finished ──────────────────────────────────────────────────────
-            self._log("\n" + "=" * 56)
-            self._log("🎉 COMPLETED!")
-            self._log(f"Success: {success_count}  |  Failed: {failed_count}")
-            self._log("=" * 56)
-            self.after(0, lambda: self._lbl_countdown.configure(text="DONE! ✅"))
-            self.after(0, lambda: self._lbl_next.configure(text="All messages sent."))
-
-            messagebox.showinfo(
-                "Campaign Complete",
-                f"Finished sending!\n\n"
-                f"✅ Success: {success_count}\n❌ Failed: {failed_count}")
-
-            if self.progress_file.exists():
-                self.progress_file.unlink(missing_ok=True)
+            # ── Finished — all contacts processed ────────────────────────────
+            if self.current_index >= total:
+                self._log("\n" + "=" * 56)
+                self._log("🎉 COMPLETED!")
+                self._log(f"Success: {success_count}  |  Failed: {failed_count}")
+                self._log("=" * 56)
+                self.after(0, lambda: self._lbl_countdown.configure(text="DONE! ✅"))
+                self.after(0, lambda: self._lbl_next.configure(
+                    text="All messages sent."))
+                messagebox.showinfo(
+                    "Campaign Complete",
+                    f"Finished sending!\n\n"
+                    f"✅ Success: {success_count}\n❌ Failed: {failed_count}")
+                # Only delete saved progress on full completion
+                if self.progress_file.exists():
+                    self.progress_file.unlink(missing_ok=True)
+            else:
+                # Stopped mid-run — keep progress so user can resume
+                self._save_progress(success_count, failed_count)
+                self._log("\n" + "=" * 56)
+                self._log("⏹ STOPPED — progress saved.")
+                self._log(f"  Sent so far: ✅ {success_count}  ❌ {failed_count}")
+                self._log(f"  Next resume akan lanjut dari baris {self.current_index + 1}.")
+                self._log("=" * 56)
 
         except Exception as e:
             self._log(f"❌ ERROR: {e}")
+            # Save progress so user can retry from where it crashed
+            try:
+                self._save_progress(success_count, failed_count)
+                self._log("💾 Progress darurat disimpan.")
+            except Exception:
+                pass
             messagebox.showerror("Error", str(e))
         finally:
             if self.driver and not self.is_paused:
