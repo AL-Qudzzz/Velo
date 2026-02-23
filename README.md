@@ -9,6 +9,7 @@ A Python-based automation tool for sending bulk WhatsApp messages through WhatsA
 > **Ready-to-use installer — no Python required!**
 >
 > [**⬇ Download VeloBot Setup v1.0.0**](https://www.mediafire.com/file/g9mg98eshwjfo5e/VeloBot_Setup_v1.0.exe/file)
+> [**⬇ Download VeloBot Setup v2.1.0**](https://www.mediafire.com/file/dkazoudyhggvafw/VeloBot_Setup_v2.1.exe/file)
 >
 > Run the installer and follow the on-screen instructions. Google Chrome must be installed on your system.
 
@@ -75,8 +76,8 @@ A Python-based automation tool for sending bulk WhatsApp messages through WhatsA
 1. **Clone or download** this repository:
 
    ```bash
-   git clone https://github.com/your-org/AutoBlast.git
-   cd AutoBlast
+   git clone https://github.com/your-org/Velo.git
+   cd Velo
    ```
 
 2. **Run the automated setup script** — it creates a virtual environment and installs all dependencies:
