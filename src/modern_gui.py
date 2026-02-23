@@ -993,8 +993,10 @@ class AutoBlastApp(ctk.CTk):
                 self.current_index = idx
                 num = idx + 1
 
-                self.after(0, self._lbl_next.configure,
-                           {"text": f"Sending to: {contact['name']} ({contact['phone']})"})
+                _name, _phone = contact['name'], contact['phone']
+                self.after(0, lambda n=_name, p=_phone:
+                           self._lbl_next.configure(
+                               text=f"Sending to: {n} ({p})"))
                 self._log(f"\n[{num}/{total}] → {contact['name']} ({contact['phone']})")
 
                 ok = send_message(self.driver, contact["phone"],
@@ -1014,12 +1016,10 @@ class AutoBlastApp(ctk.CTk):
                     self._log(f"  ❌ Failed")
 
                 # Update stat cards
-                self.after(0, self._lbl_remaining.configure,
-                           {"text": str(total - num)})
-                self.after(0, self._lbl_success.configure,
-                           {"text": str(success_count)})
-                self.after(0, self._lbl_failed.configure,
-                           {"text": str(failed_count)})
+                _rem, _suc, _fail = total - num, success_count, failed_count
+                self.after(0, lambda r=_rem: self._lbl_remaining.configure(text=str(r)))
+                self.after(0, lambda s=_suc: self._lbl_success.configure(text=str(s)))
+                self.after(0, lambda f=_fail: self._lbl_failed.configure(text=str(f)))
 
                 # ── AUTO-PAUSE CHECK ──────────────────────────────────────
                 limit = self.v_pause_limit.get()
@@ -1039,17 +1039,15 @@ class AutoBlastApp(ctk.CTk):
                     self._log("Progress saved. Resume manually or wait for auto-resume.")
                     self._log("=" * 56)
 
-                    self.after(0, self._lbl_countdown.configure,
-                               {"text": "AUTO-PAUSE"})
-                    self.after(0, self._btn_pause.configure,
-                               {"text": "▶  RESUME", "fg_color": "#16A34A"})
-                    self.after(0, self._lbl_ab_status.configure,
-                               {"text": f"⛔  PAUSED setelah {limit} sukses",
-                                "text_color": "#EF4444"})
-                    self.after(0, self._btn_ab_resume.configure,
-                               {"state": "normal"})
-                    self.after(0, self._lbl_ab_info.configure,
-                               {"text": "Progress tersimpan. Resume manual atau tunggu auto-resume."})
+                    self.after(0, lambda: self._lbl_countdown.configure(text="AUTO-PAUSE"))
+                    self.after(0, lambda: self._btn_pause.configure(
+                        text="▶  RESUME", fg_color="#16A34A"))
+                    _lim = limit
+                    self.after(0, lambda l=_lim: self._lbl_ab_status.configure(
+                        text=f"⛔  PAUSED setelah {l} sukses", text_color="#EF4444"))
+                    self.after(0, lambda: self._btn_ab_resume.configure(state="normal"))
+                    self.after(0, lambda: self._lbl_ab_info.configure(
+                        text="Progress tersimpan. Resume manual atau tunggu auto-resume."))
 
                     # 3. Auto-resume countdown
                     if self.v_auto_resume.get():
@@ -1065,10 +1063,10 @@ class AutoBlastApp(ctk.CTk):
                         time_module.sleep(0.5)
 
                     # 5. Clear auto-pause UI
-                    self.after(0, self._lbl_ab_countdown.configure, {"text": ""})
-                    self.after(0, self._lbl_ab_status.configure,
-                               {"text": "⬤  Running", "text_color": "#22C55E"})
-                    self.after(0, self._btn_ab_resume.configure, {"state": "disabled"})
+                    self.after(0, lambda: self._lbl_ab_countdown.configure(text=""))
+                    self.after(0, lambda: self._lbl_ab_status.configure(
+                        text="⬤  Running", text_color="#22C55E"))
+                    self.after(0, lambda: self._btn_ab_resume.configure(state="disabled"))
                     if self.is_running:
                         self._log("▶️ RESUMED — continuing…")
                 # ─────────────────────────────────────────────────────────
@@ -1080,8 +1078,9 @@ class AutoBlastApp(ctk.CTk):
                 if idx < total - 1 and self.is_running:
                     if num < total:
                         nxt = self.contacts[num]
-                        self.after(0, self._lbl_next.configure,
-                                   {"text": f"Next: {nxt['name']} ({nxt['phone']})"})
+                        _nn, _np = nxt['name'], nxt['phone']
+                        self.after(0, lambda n=_nn, p=_np:
+                                   self._lbl_next.configure(text=f"Next: {n} ({p})"))
 
                     delay = self._calc_delay(num)
                     self._log(f"  ⏳ Waiting {delay:.0f}s…")
@@ -1092,8 +1091,8 @@ class AutoBlastApp(ctk.CTk):
                             time_module.sleep(0.5)
                         if not self.is_running: break
                         mm, ss = rem // 60, rem % 60
-                        self.after(0, self._lbl_countdown.configure,
-                                   {"text": f"{mm:02d}:{ss:02d}"})
+                        _t = f"{mm:02d}:{ss:02d}"
+                        self.after(0, lambda t=_t: self._lbl_countdown.configure(text=t))
                         time_module.sleep(1)
 
             # ── Finished ──────────────────────────────────────────────────────
@@ -1101,8 +1100,8 @@ class AutoBlastApp(ctk.CTk):
             self._log("🎉 COMPLETED!")
             self._log(f"Success: {success_count}  |  Failed: {failed_count}")
             self._log("=" * 56)
-            self.after(0, self._lbl_countdown.configure, {"text": "DONE!"})
-            self.after(0, self._lbl_next.configure, {"text": "All messages sent."})
+            self.after(0, lambda: self._lbl_countdown.configure(text="DONE! ✅"))
+            self.after(0, lambda: self._lbl_next.configure(text="All messages sent."))
 
             messagebox.showinfo(
                 "Campaign Complete",
@@ -1138,12 +1137,12 @@ class AutoBlastApp(ctk.CTk):
         if self.is_paused:
             self._auto_resume_cancel.set()
             self.is_paused = False
-            self.after(0, self._btn_pause.configure,
-                       {"text": "⏸  PAUSE", "fg_color": "#D97706"})
-            self.after(0, self._lbl_ab_status.configure,
-                       {"text": "⬤  Running", "text_color": "#22C55E"})
-            self.after(0, self._lbl_ab_countdown.configure, {"text": ""})
-            self.after(0, self._btn_ab_resume.configure, {"state": "disabled"})
+            self.after(0, lambda: self._btn_pause.configure(
+                text="⏸  PAUSE", fg_color="#D97706"))
+            self.after(0, lambda: self._lbl_ab_status.configure(
+                text="⬤  Running", text_color="#22C55E"))
+            self.after(0, lambda: self._lbl_ab_countdown.configure(text=""))
+            self.after(0, lambda: self._btn_ab_resume.configure(state="disabled"))
             self._log("▶️ RESUMED (manual)")
 
     def _auto_resume_timer(self, hours: float):
@@ -1153,8 +1152,8 @@ class AutoBlastApp(ctk.CTk):
             if self._auto_resume_cancel.is_set() or not self.is_running:
                 return
             h, m, s = rem // 3600, (rem % 3600) // 60, rem % 60
-            self.after(0, self._lbl_ab_countdown.configure,
-                       {"text": f"{h:02d}:{m:02d}:{s:02d}"})
+            _t = f"{h:02d}:{m:02d}:{s:02d}"
+            self.after(0, lambda t=_t: self._lbl_ab_countdown.configure(text=t))
             time_module.sleep(1)
         if not self._auto_resume_cancel.is_set() and self.is_paused and self.is_running:
             self._log(f"🔔 Auto-resume triggered after {hours:.0f}h!")
